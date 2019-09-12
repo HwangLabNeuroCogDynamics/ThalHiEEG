@@ -70,24 +70,30 @@ for sub in os.listdir(ROOT):
 	# each subject has around 415 epochs (some rejected?)
 
 
+
+########################################################################
 ### run trial by trial TFR, without any baseline, then save.
+########################################################################
 freqs=np.arange(.5,38.,2.)
 n_cycles = freqs / 2.
 
 
 for sub in all_subs_cue.keys():
-	#tfi = tfr_morlet(all_subs_cue[sub], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+	#tfi = tfr_morlet(all_subs_cue[sub], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
 	#save_object(tfi, OUT+sub+'_cueTFR')  
 
 	for condition in ['IDS', 'EDS', 'stay']:	
-		tfi = tfr_morlet(all_subs_probe[sub][condition], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+		tfi = tfr_morlet(all_subs_probe[sub][condition], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
 		save_object(tfi, OUT+sub+'_' + condition + '_probeTFR') 
 
 	# after saving to EpochTFR format, the triggers can be found in "trig_id", and can be selected by tfi['EDS_trig']
 	# can then find meta data (performance) by doing tfi['IDS_trig'].metadata
 
 
+
+########################################################################
 ### Contrast power between conditions for cue
+########################################################################
 cue_ave_TFR = {}
 for sub in all_subs_cue.keys():
 	cue_ave_TFR[sub] = {}
@@ -111,8 +117,9 @@ group_ave_cue_TFR_EDS_v_IDS.plot_topo()
 group_ave_cue_TFR_IDS_v_Stay.plot_topo()
 
 
-
-### Contrast power bewteen conditions for probe (more like cue + probe)
+########################################################################
+### Contrast power bewteen conditions for probe
+########################################################################
 probe_ave_TFR = {}
 for sub in all_subs_cue.keys():
 
@@ -120,16 +127,21 @@ for sub in all_subs_cue.keys():
 	
 	for condition in ['IDS', 'EDS', 'stay']:
 		tfi = read_object(OUT+sub+'_' + condition + '_probeTFR') 
-		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average()
-
+		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average()  #.apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
+		#probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
 
 # substract conditions within each subject
+probe_ave_TFR_EDS = {}
+probe_ave_TFR_IDS = {}
+probe_ave_TFR_Stay = {}
 probe_ave_TFR_EDS_v_IDS = {}
 probe_ave_TFR_IDS_v_Stay = {}
 for sub in all_subs_probe.keys():
 	probe_ave_TFR_EDS_v_IDS[sub] = probe_ave_TFR[sub]['EDS'] - probe_ave_TFR[sub]['IDS'] 
-	probe_ave_TFR_IDS_v_Stay[sub] = probe_ave_TFR[sub]['IDS'] - probe_ave_TFR[sub]['Stay'] 
-
+	probe_ave_TFR_IDS_v_Stay[sub] = probe_ave_TFR[sub]['IDS'] - probe_ave_TFR[sub]['stay'] 
+	probe_ave_TFR_EDS[sub] = probe_ave_TFR[sub]['EDS']
+	probe_ave_TFR_IDS[sub] = probe_ave_TFR[sub]['IDS']
+	probe_ave_TFR_Stay[sub] = probe_ave_TFR[sub]['stay']
 
 group_ave_probe_TFR_IDS_v_Stay = mne.grand_average(list(probe_ave_TFR_IDS_v_Stay.values()))
 group_ave_probe_TFR_EDS_v_IDS = mne.grand_average(list(probe_ave_TFR_EDS_v_IDS.values()))
@@ -138,8 +150,172 @@ group_ave_probe_TFR_IDS_v_Stay.plot_topo()
 
 
 
+########################################################################
+### run trial by trial ITC, without any baseline, then save.
+########################################################################
+cue_ave_ITC = {}
+
+for sub in all_subs_cue.keys():
+	cue_ave_ITC[sub] = {}
+	for condition in ['EDS_trig', 'IDS_trig', 'Stay_trig']:
+		_, cue_ave_ITC[sub][condition] = tfr_morlet(all_subs_cue[sub][condition][all_subs_cue[sub][condition].metadata['trial_Corr']==1], freqs=freqs, average=True,n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=6)
+
+	#save_object(tfi, OUT+sub+'_cueITC')  
+cue_ave_ITC_EDS = {}
+cue_ave_ITC_IDS = {}
+cue_ave_ITC_Stay = {}
+cue_ave_ITC_EDS_v_IDS = {}
+cue_ave_ITC_IDS_v_Stay = {}
+for sub in all_subs_cue.keys():
+	cue_ave_ITC_EDS_v_IDS[sub] = cue_ave_ITC[sub]['EDS_trig'] - cue_ave_ITC[sub]['IDS_trig'] 
+	cue_ave_ITC_IDS_v_Stay[sub] = cue_ave_ITC[sub]['IDS_trig'] - cue_ave_ITC[sub]['Stay_trig'] 
+	cue_ave_ITC_EDS[sub] = cue_ave_ITC[sub]['EDS_trig']
+	cue_ave_ITC_IDS[sub] = cue_ave_ITC[sub]['IDS_trig']
+	cue_ave_ITC_Stay[sub] = cue_ave_ITC[sub]['Stay_trig']
+
+group_ave_cue_ITC_IDS_v_Stay = mne.grand_average(list(cue_ave_ITC_IDS_v_Stay.values()))
+group_ave_cue_ITC_EDS_v_IDS = mne.grand_average(list(cue_ave_ITC_EDS_v_IDS.values()))
+group_ave_cue_ITC_EDS_v_IDS.plot_topo()
+group_ave_cue_ITC_IDS_v_Stay.plot_topo()
+
+group_ave_cue_ITC_EDS = mne.grand_average(list(cue_ave_ITC_EDS.values()))
+
+group_ave_cue_ITC_IDS = mne.grand_average(list(cue_ave_ITC_IDS.values()))
+
+
+#for probe
+probe_ave_ITC = {}
+
+for sub in all_subs_probe.keys():
+	probe_ave_ITC[sub] = {}
+	for condition in ['EDS', 'IDS', 'stay']:
+		_, probe_ave_ITC[sub][condition] = tfr_morlet(all_subs_probe[sub][condition][all_subs_probe[sub][condition].metadata['trial_Corr']==1], freqs=freqs, average=True,n_cycles=n_cycles, use_fft=True, return_itc=True, decim=1, n_jobs=6)
+
+	#save_object(tfi, OUT+sub+'_cueITC')  
+probe_ave_ITC_EDS = {}
+probe_ave_ITC_IDS = {}
+probe_ave_ITC_Stay = {}
+probe_ave_ITC_EDS_v_IDS = {}
+probe_ave_ITC_IDS_v_Stay = {}
+for sub in all_subs_probe.keys():
+	probe_ave_ITC_EDS_v_IDS[sub] = probe_ave_ITC[sub]['EDS'] - probe_ave_ITC[sub]['IDS'] 
+	probe_ave_ITC_IDS_v_Stay[sub] = probe_ave_ITC[sub]['IDS'] - probe_ave_ITC[sub]['stay'] 
+	probe_ave_ITC_EDS[sub] = probe_ave_ITC[sub]['EDS']
+	probe_ave_ITC_IDS[sub] = probe_ave_ITC[sub]['IDS']
+	probe_ave_ITC_Stay[sub] = probe_ave_ITC[sub]['stay']
+
+group_ave_probe_ITC_IDS_v_Stay = mne.grand_average(list(probe_ave_ITC_IDS_v_Stay.values()))
+group_ave_probe_ITC_EDS_v_IDS = mne.grand_average(list(probe_ave_ITC_EDS_v_IDS.values()))
+group_ave_probe_ITC_EDS_v_IDS.plot_topo()
+group_ave_probe_ITC_IDS_v_Stay.plot_topo()
+
+group_ave_probe_ITC_EDS = mne.grand_average(list(probe_ave_ITC_EDS.values()))
+
+group_ave_probe_ITC_IDS = mne.grand_average(list(probe_ave_ITC_IDS.values()))
 
 
 
-
+########################################################################
+### Sensor level evoke response for cue
+########################################################################
     
+cue_ave_Evoke = {}
+
+for sub in all_subs_cue.keys():
+	cue_ave_Evoke[sub] = {}
+	for condition in ['EDS_trig', 'IDS_trig', 'Stay_trig']:
+		cue_ave_Evoke[sub][condition] = all_subs_cue[sub][condition].average()
+
+
+cue_ave_Evoke_EDS = {}
+cue_ave_Evoke_IDS = {}
+cue_ave_Evoke_Stay = {}
+#cue_ave_Evoke_EDS_v_IDS = {}
+#cue_ave_Evoke_IDS_v_Stay = {}
+for sub in all_subs_cue.keys():
+	#cue_ave_Evoke_EDS_v_IDS[sub] = cue_ave_Evoke[sub]['EDS_trig'] - cue_ave_Evoke[sub]['IDS_trig'] 
+	#cue_ave_Evoke_IDS_v_Stay[sub] = cue_ave_Evoke[sub]['IDS_trig'] - cue_ave_Evoke[sub]['Stay_trig'] 
+	cue_ave_Evoke_EDS[sub] = cue_ave_Evoke[sub]['EDS_trig']
+	cue_ave_Evoke_IDS[sub] = cue_ave_Evoke[sub]['IDS_trig']
+	cue_ave_Evoke_Stay[sub] = cue_ave_Evoke[sub]['Stay_trig']
+
+group_ave_cue_Evoke_EDS = mne.grand_average(list(cue_ave_Evoke_EDS.values()))
+group_ave_cue_Evoke_IDS = mne.grand_average(list(cue_ave_Evoke_IDS.values()))
+group_ave_cue_Evoke_Stay = mne.grand_average(list(cue_ave_Evoke_Stay.values()))
+
+# Code to try out spatiotemproal clustering on evoke data
+con = mne.channels.find_ch_connectivity(group_ave_cue_Evoke_EDS.info, "eeg")
+
+#input into clustering needs to be in sub x time by channel.
+
+D1 = np.zeros((len(cue_ave_Evoke_EDS.keys()),cue_ave_Evoke_EDS['128'].data.shape[1], cue_ave_Evoke_EDS['128'].data.shape[0]))
+D2 = np.zeros((len(cue_ave_Evoke_EDS.keys()),cue_ave_Evoke_EDS['128'].data.shape[1], cue_ave_Evoke_EDS['128'].data.shape[0]))
+
+for i, sub in enumerate(cue_ave_Evoke_EDS.keys()):
+	D1[i,:,:] = cue_ave_Evoke_EDS[sub].data.transpose(1,0)
+	D2[i,:,:] = cue_ave_Evoke_IDS[sub].data.transpose(1,0)   
+
+#tfce = dict(start=.2, step=.2) #don't know what this is
+t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_test([D1,D2], .05, n_permutations=1000, n_jobs = 8) 
+
+evoked = mne.combine_evoked([group_ave_cue_Evoke_EDS, - group_ave_cue_Evoke_IDS], weights='equal')
+time_unit = dict(time_unit="s")
+evoked.plot_joint(title="", ts_args=time_unit, topomap_args=time_unit)
+
+
+
+########################################################################
+### Sensor level evoke response for probe
+########################################################################
+    
+probe_ave_Evoke = {}
+
+for sub in all_subs_probe.keys():
+	probe_ave_Evoke[sub] = {}
+	for condition in ['EDS', 'IDS', 'stay']:
+		probe_ave_Evoke[sub][condition] = all_subs_probe[sub][condition].average()
+
+
+probe_ave_Evoke_EDS = {}
+probe_ave_Evoke_IDS = {}
+probe_ave_Evoke_Stay = {}
+#probe_ave_Evoke_EDS_v_IDS = {}
+#probe_ave_Evoke_IDS_v_Stay = {}
+for sub in all_subs_probe.keys():
+	#probe_ave_Evoke_EDS_v_IDS[sub] = probe_ave_Evoke[sub]['EDS_trig'] - probe_ave_Evoke[sub]['IDS_trig'] 
+	#probe_ave_Evoke_IDS_v_Stay[sub] = probe_ave_Evoke[sub]['IDS_trig'] - probe_ave_Evoke[sub]['Stay_trig'] 
+	probe_ave_Evoke_EDS[sub] = probe_ave_Evoke[sub]['EDS']
+	probe_ave_Evoke_IDS[sub] = probe_ave_Evoke[sub]['IDS']
+	probe_ave_Evoke_Stay[sub] = probe_ave_Evoke[sub]['stay']
+
+group_ave_probe_Evoke_EDS = mne.grand_average(list(probe_ave_Evoke_EDS.values()))
+group_ave_probe_Evoke_IDS = mne.grand_average(list(probe_ave_Evoke_IDS.values()))
+group_ave_probe_Evoke_Stay = mne.grand_average(list(probe_ave_Evoke_Stay.values()))
+
+# Code to try out spatiotemproal clustering on evoke data
+con = mne.channels.find_ch_connectivity(group_ave_cue_Evoke_EDS.info, "eeg")
+
+#input into clustering needs to be in sub x time by channel.
+
+D1 = np.zeros((len(probe_ave_Evoke_EDS.keys()),probe_ave_Evoke_EDS['128'].data.shape[1], probe_ave_Evoke_EDS['128'].data.shape[0]))
+D2 = np.zeros((len(probe_ave_Evoke_EDS.keys()),probe_ave_Evoke_EDS['128'].data.shape[1], probe_ave_Evoke_EDS['128'].data.shape[0]))
+
+for i, sub in enumerate(probe_ave_Evoke_EDS.keys()):
+	D1[i,:,:] = probe_ave_Evoke_EDS[sub].data.transpose(1,0)
+	D2[i,:,:] = probe_ave_Evoke_Stay[sub].data.transpose(1,0)   
+
+#tfce = dict(start=.2, step=.2) #don't know what this is
+t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_test([D1,D2], .05, n_permutations=1000, n_jobs = 8) 
+
+evoked = mne.combine_evoked([group_ave_probe_Evoke_EDS, - group_ave_probe_Evoke_IDS], weights='equal')
+time_unit = dict(time_unit="s")
+evoked.plot_joint(title="", ts_args=time_unit, topomap_args=time_unit)
+
+
+
+
+
+
+
+
+
