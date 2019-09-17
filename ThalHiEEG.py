@@ -42,6 +42,18 @@ def read_object(filename):
 	return o
 
 
+def mirror_evoke(ep):
+	
+	e = ep.copy()
+	nd = np.concatenate((np.flip(e._data[:,:,e.time_as_index(e.tmin)[0]:e.time_as_index(0)[0]], axis=2), e._data, np.flip(e._data[:,:,e.time_as_index(e.tmax+e.tmin)[0]:e.time_as_index(e.tmax)[0]],axis=2)),axis=2)
+	tnmin = e.tmin+e.tmin
+	tnmax = e.tmax -e.tmin 
+	e._set_times(np.arange(tnmin,tnmax+e.times[2]-e.times[1],e.times[2]-e.times[1]))
+	e._data = nd
+
+	return e
+
+
 
 # where data are
 ROOT='/data/backed_up/shared/ThalHi_data/eeg_preproc/'
@@ -74,13 +86,13 @@ for sub in os.listdir(ROOT):
 ########################################################################
 ### run trial by trial TFR, without any baseline, then save.
 ########################################################################
-freqs=np.arange(.5,38.,2.)
-n_cycles = freqs / 2.
+freqs=np.arange(1,40.,1.)
+n_cycles = 6 #freqs / 2.
 
 
 for sub in all_subs_cue.keys():
-	#tfi = tfr_morlet(all_subs_cue[sub], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
-	#save_object(tfi, OUT+sub+'_cueTFR')  
+	tfi = tfr_morlet(all_subs_cue[sub], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
+	save_object(tfi, OUT+sub+'_cueTFR')  
 
 	for condition in ['IDS', 'EDS', 'stay']:	
 		tfi = tfr_morlet(all_subs_probe[sub][condition], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
@@ -100,19 +112,30 @@ for sub in all_subs_cue.keys():
 	tfi = read_object(OUT+sub+'_cueTFR')  
 
 	for condition in ['EDS_trig', 'IDS_trig', 'Stay_trig']:
-		cue_ave_TFR[sub][condition] =  tfi[condition][tfi[condition].metadata['trial_Corr']==1].average()  # not enough error trials to compare corr vs. error, so only pull #.apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
-		#cue_ave_TFR[sub][condition].data = cue_ave_TFR[sub][condition].data*10 #convert to db
+		cue_ave_TFR[sub][condition] =  tfi[condition][tfi[condition].metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.8, -0.3])  # not enough error trials to compare corr vs. error, so only pull #.apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
+		cue_ave_TFR[sub][condition].data = cue_ave_TFR[sub][condition].data*10 #convert to db
 
 # substract conditions within each subject
 cue_ave_TFR_EDS_v_IDS = {}
 cue_ave_TFR_IDS_v_Stay = {}
+cue_ave_TFR_EDS = {}
+cue_ave_TFR_IDS = {}
+cue_ave_TFR_Stay = {}
 for sub in all_subs_cue.keys():
 	cue_ave_TFR_EDS_v_IDS[sub] = cue_ave_TFR[sub]['EDS_trig'] - cue_ave_TFR[sub]['IDS_trig'] 
 	cue_ave_TFR_IDS_v_Stay[sub] = cue_ave_TFR[sub]['IDS_trig'] - cue_ave_TFR[sub]['Stay_trig'] 
+	cue_ave_TFR_EDS[sub] = cue_ave_TFR[sub]['EDS_trig']
+	cue_ave_TFR_IDS[sub] = cue_ave_TFR[sub]['IDS_trig']
+	cue_ave_TFR_Stay[sub] = cue_ave_TFR[sub]['Stay_trig']
+
 
 #grand average across subjects
 group_ave_cue_TFR_IDS_v_Stay = mne.grand_average(list(cue_ave_TFR_IDS_v_Stay.values()))
 group_ave_cue_TFR_EDS_v_IDS = mne.grand_average(list(cue_ave_TFR_EDS_v_IDS.values()))
+group_ave_cue_TFR_EDS = mne.grand_average(list(cue_ave_TFR_EDS.values()))
+group_ave_cue_TFR_IDS = mne.grand_average(list(cue_ave_TFR_IDS.values()))
+group_ave_cue_TFR_Stay = mne.grand_average(list(cue_ave_TFR_Stay.values()))
+
 group_ave_cue_TFR_EDS_v_IDS.plot_topo()
 group_ave_cue_TFR_IDS_v_Stay.plot_topo()
 
@@ -127,8 +150,8 @@ for sub in all_subs_cue.keys():
 	
 	for condition in ['IDS', 'EDS', 'stay']:
 		tfi = read_object(OUT+sub+'_' + condition + '_probeTFR') 
-		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average()  #.apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
-		#probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
+		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
+		probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
 
 # substract conditions within each subject
 probe_ave_TFR_EDS = {}
@@ -145,9 +168,10 @@ for sub in all_subs_probe.keys():
 
 group_ave_probe_TFR_IDS_v_Stay = mne.grand_average(list(probe_ave_TFR_IDS_v_Stay.values()))
 group_ave_probe_TFR_EDS_v_IDS = mne.grand_average(list(probe_ave_TFR_EDS_v_IDS.values()))
+group_ave_probe_TFR_EDS = mne.grand_average(list(probe_ave_TFR_EDS.values()))
 group_ave_probe_TFR_EDS_v_IDS.plot_topo()
 group_ave_probe_TFR_IDS_v_Stay.plot_topo()
-
+group_ave_probe_TFR_EDS.plot_topo()
 
 
 ########################################################################
@@ -313,9 +337,19 @@ evoked.plot_joint(title="", ts_args=time_unit, topomap_args=time_unit)
 
 
 
+#### A function to do "mirror"
+def mirror_evoke(e):
+	
+	nd = np.concatenate((np.flip(e._data[:,:,e.time_as_index(e.tmin)[0]:e.time_as_index(0)[0]], axis=2), e._data, np.flip(e._data[:,:,e.time_as_index(e.tmax+e.tmin)[0]:e.time_as_index(e.tmax)[0]],axis=2)),axis=2)
+	tnmin = e.tmin+e.tmin
+	tnmax = e.tmax + e.tmax+e.tmin 
+	nt = np.arange(tnmin,tnmax+e.times[2]-e.times[1],e.times[2]-e.times[1]) 
+	e._data = nd
+	e.tmin = tnmin
+	e.tmax = tnmax
+	e.times = nt
 
-
-
+	return e
 
 
 
