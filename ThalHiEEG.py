@@ -86,16 +86,20 @@ for sub in os.listdir(ROOT):
 ########################################################################
 ### run trial by trial TFR, without any baseline, then save.
 ########################################################################
-freqs=np.arange(1,40.,1.)
-n_cycles = 6 #freqs / 2.
+freqs=np.arange(2,40.,2.)
+n_cycles = 7 #freqs / 2.
 
 
 for sub in all_subs_cue.keys():
-	tfi = tfr_morlet(all_subs_cue[sub], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
+	tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_cue[sub])), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+	# double mirror, then crop
+	tfi = tfi.crop(tmin = all_subs_cue[sub].tmin, tmax = all_subs_cue[sub].tmax)
+
 	save_object(tfi, OUT+sub+'_cueTFR')  
 
 	for condition in ['IDS', 'EDS', 'stay']:	
-		tfi = tfr_morlet(all_subs_probe[sub][condition], freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=6)
+		tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition])), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+		tfi = tfi.crop(tmin = all_subs_probe[sub][condition].tmin, tmax = all_subs_probe[sub][condition].tmax)
 		save_object(tfi, OUT+sub+'_' + condition + '_probeTFR') 
 
 	# after saving to EpochTFR format, the triggers can be found in "trig_id", and can be selected by tfi['EDS_trig']
