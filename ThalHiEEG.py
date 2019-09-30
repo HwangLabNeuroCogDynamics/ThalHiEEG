@@ -16,9 +16,6 @@ from pandas import DataFrame, read_csv
 import matplotlib.pyplot as plt
 import pandas as pd  
 import matplotlib
-print('Python version ' + sys.version)
-print('Pandas version ' + pd.__version__)
-print('Matplotlib version ' + matplotlib.__version__)
 import mne
 #import FOOOF
 from mne.time_frequency import tfr_morlet
@@ -45,14 +42,24 @@ def read_object(filename):
 def mirror_evoke(ep):
 	
 	e = ep.copy()
-	nd = np.concatenate((np.flip(e._data[:,:,e.time_as_index(e.tmin)[0]:e.time_as_index(0)[0]], axis=2), e._data, np.flip(e._data[:,:,e.time_as_index(e.tmax+e.tmin)[0]:e.time_as_index(e.tmax)[0]],axis=2)),axis=2)
-	tnmin = e.tmin+e.tmin
-	tnmax = e.tmax -e.tmin 
+	nd = np.concatenate((np.flip(e._data[:,:,e.time_as_index(0)[0]:e.time_as_index(1.5)[0]], axis=2), e._data, np.flip(e._data[:,:,e.time_as_index(e.tmax-1.5)[0]:e.time_as_index(e.tmax)[0]],axis=2)),axis=2)
+	tnmin = e.tmin - 1.5
+	tnmax = e.tmax + 1.5 
 	e._set_times(np.arange(tnmin,tnmax+e.times[2]-e.times[1],e.times[2]-e.times[1]))
 	e._data = nd
 
 	return e
 
+def mirror_iti(ep):
+	
+	e = ep.copy()
+	nd = np.concatenate((np.flip(e._data[:,:,e.time_as_index(0)[0]:e.time_as_index(3)[0]], axis=2), e._data, np.flip(e._data[:,:,e.time_as_index(e.tmax-3)[0]:e.time_as_index(e.tmax)[0]],axis=2)),axis=2)
+	tnmin = e.tmin - 3
+	tnmax = e.tmax + 3 
+	e._set_times(np.arange(tnmin,tnmax+e.times[2]-e.times[1],e.times[2]-e.times[1]))
+	e._data = nd
+
+	return e
 
 
 # where data are
@@ -63,14 +70,17 @@ print(os.listdir(ROOT))
 OUT='/home/kahwang/bsh/ThalHi_data/TFR/'
 
 # Compiling epochs
-all_subs_cue={}
-all_subs_probe={}
+all_subs_cue = {}
+all_subs_probe = {}
+all_subs_ITI = {}
 #all_subs_resp={}
 for sub in os.listdir(ROOT):
-    if sub not in ['73','200','201','103','96', '137', 'pilot', 'Em']:# and (sub=='Em' or sub=='112' or sub=='82'):#or sub=='80'): # sub 73 is the file with the 1 missing event, 103 and  96 are noisy subs
+    if sub not in ['73','103','96','137', '143', '142', '200', '201', 'pilot', 'Em', 'ITI_epochs']:# and (sub=='Em' or sub=='112' or sub=='82'):#or sub=='80'): # sub 73 is the file with the 1 missing event, 103 and  96 are noisy subs. 200 and 201 are patients.
         this_sub_path=ROOT+sub
-        
         all_subs_cue[sub]=mne.read_epochs(this_sub_path+'/cue-epo.fif')
+
+        iti_path = ROOT + 'ITI_epochs/' + sub
+        all_subs_ITI[sub]=mne.read_epochs(iti_path+'/ITI-epo.fif')
 
         all_subs_probe[sub] = {}
         for condition in ['IDS', 'EDS', 'stay']:	
@@ -91,15 +101,23 @@ n_cycles = 7 #freqs / 2.
 
 
 for sub in all_subs_cue.keys():
-	tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_cue[sub])), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+	
+	#tfr on cue
+	tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_cue[sub].crop(tmin=0, tmax=1.5))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
 	# double mirror, then crop
-	tfi = tfi.crop(tmin = all_subs_cue[sub].tmin, tmax = all_subs_cue[sub].tmax)
-
+	tfi = tfi.crop(tmin = 0, tmax = all_subs_cue[sub].tmax)
 	save_object(tfi, OUT+sub+'_cueTFR')  
 
+	#tfr on iti
+	tfi = tfr_morlet(mirror_iti(all_subs_ITI[sub]), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+	# double mirror, then crop
+	tfi = tfi.crop(tmin = all_subs_ITI[sub].tmin, tmax = all_subs_ITI[sub].tmax)
+	save_object(tfi, OUT+sub+'_itiTFR')  
+
+
 	for condition in ['IDS', 'EDS', 'stay']:	
-		tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition])), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
-		tfi = tfi.crop(tmin = all_subs_probe[sub][condition].tmin, tmax = all_subs_probe[sub][condition].tmax)
+		tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition].crop(tmin=0, tmax=3))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+		tfi = tfi.crop(tmin = 0, tmax = all_subs_probe[sub][condition].tmax)
 		save_object(tfi, OUT+sub+'_' + condition + '_probeTFR') 
 
 	# after saving to EpochTFR format, the triggers can be found in "trig_id", and can be selected by tfi['EDS_trig']
@@ -125,6 +143,7 @@ cue_ave_TFR_IDS_v_Stay = {}
 cue_ave_TFR_EDS = {}
 cue_ave_TFR_IDS = {}
 cue_ave_TFR_Stay = {}
+
 for sub in all_subs_cue.keys():
 	cue_ave_TFR_EDS_v_IDS[sub] = cue_ave_TFR[sub]['EDS_trig'] - cue_ave_TFR[sub]['IDS_trig'] 
 	cue_ave_TFR_IDS_v_Stay[sub] = cue_ave_TFR[sub]['IDS_trig'] - cue_ave_TFR[sub]['Stay_trig'] 
@@ -140,8 +159,18 @@ group_ave_cue_TFR_EDS = mne.grand_average(list(cue_ave_TFR_EDS.values()))
 group_ave_cue_TFR_IDS = mne.grand_average(list(cue_ave_TFR_IDS.values()))
 group_ave_cue_TFR_Stay = mne.grand_average(list(cue_ave_TFR_Stay.values()))
 
-group_ave_cue_TFR_EDS_v_IDS.plot_topo()
-group_ave_cue_TFR_IDS_v_Stay.plot_topo()
+
+group_ave_cue_TFR_EDS.plot_topo(title='EDS', vmin=-1, vmax=1)
+group_ave_cue_TFR_IDS.plot_topo(title='IDS', vmin=-1, vmax=1)
+group_ave_cue_TFR_Stay.plot_topo(title='Stay', vmin=-1, vmax=1)
+#group_ave_cue_TFR_EDS_v_IDS.plot_topo()
+#group_ave_cue_TFR_IDS_v_Stay.plot_topo()
+
+
+
+#plot ind 
+for sub in all_subs_cue.keys():
+	cue_ave_TFR_EDS_v_IDS[sub].plot_topo(title=sub, zlim=)
 
 
 ########################################################################
@@ -154,7 +183,7 @@ for sub in all_subs_cue.keys():
 	
 	for condition in ['IDS', 'EDS', 'stay']:
 		tfi = read_object(OUT+sub+'_' + condition + '_probeTFR') 
-		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
+		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.8, -0.6])
 		probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
 
 # substract conditions within each subject
@@ -173,9 +202,17 @@ for sub in all_subs_probe.keys():
 group_ave_probe_TFR_IDS_v_Stay = mne.grand_average(list(probe_ave_TFR_IDS_v_Stay.values()))
 group_ave_probe_TFR_EDS_v_IDS = mne.grand_average(list(probe_ave_TFR_EDS_v_IDS.values()))
 group_ave_probe_TFR_EDS = mne.grand_average(list(probe_ave_TFR_EDS.values()))
+group_ave_probe_TFR_IDS = mne.grand_average(list(probe_ave_TFR_IDS.values()))
+group_ave_probe_TFR_Stay = mne.grand_average(list(probe_ave_TFR_Stay.values()))
 group_ave_probe_TFR_EDS_v_IDS.plot_topo()
-group_ave_probe_TFR_IDS_v_Stay.plot_topo()
-group_ave_probe_TFR_EDS.plot_topo()
+#group_ave_probe_TFR_IDS_v_Stay.plot_topo()
+group_ave_probe_TFR_EDS.plot_topo(title='EDS', vmin=-3, vmax=3)
+group_ave_probe_TFR_IDS.plot_topo(title='IDS', vmin=-1, vmax=1)
+group_ave_probe_TFR_Stay.plot_topo(title='Stay', vmin=-1, vmax=1)
+
+
+
+
 
 
 ########################################################################
@@ -341,19 +378,6 @@ evoked.plot_joint(title="", ts_args=time_unit, topomap_args=time_unit)
 
 
 
-#### A function to do "mirror"
-def mirror_evoke(e):
-	
-	nd = np.concatenate((np.flip(e._data[:,:,e.time_as_index(e.tmin)[0]:e.time_as_index(0)[0]], axis=2), e._data, np.flip(e._data[:,:,e.time_as_index(e.tmax+e.tmin)[0]:e.time_as_index(e.tmax)[0]],axis=2)),axis=2)
-	tnmin = e.tmin+e.tmin
-	tnmax = e.tmax + e.tmax+e.tmin 
-	nt = np.arange(tnmin,tnmax+e.times[2]-e.times[1],e.times[2]-e.times[1]) 
-	e._data = nd
-	e.tmin = tnmin
-	e.tmax = tnmax
-	e.times = nt
-
-	return e
-
+#### Correlate trial by trial cue v probe power
 
 
