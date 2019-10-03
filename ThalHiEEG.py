@@ -96,8 +96,8 @@ for sub in os.listdir(ROOT):
 ########################################################################
 ### run trial by trial TFR, without any baseline, then save.
 ########################################################################
-freqs=np.arange(2,40.,2.)
-n_cycles = 7 #freqs / 2.
+freqs=np.arange(1,40.,1.)
+n_cycles = 6 #freqs / 2.
 
 
 for sub in all_subs_cue.keys():
@@ -133,8 +133,15 @@ for sub in all_subs_cue.keys():
 	cue_ave_TFR[sub] = {}
 	tfi = read_object(OUT+sub+'_cueTFR')  
 
+	# append ITI data as baseline in tfi object
+	btfi = read_object(OUT+sub+'_itiTFR')
+	btfi = np.mean(np.mean(btfi.data, axis=0), axis=2)
+	bp = np.repeat(np.repeat(btfi[np.newaxis, :,:], tfi.data.shape[0], axis=0)[:,:,:,np.newaxis], 100, axis=3)
+	tfi.data = np.concatenate((bp, tfi.data), axis=3)
+	tfi.times = np.arange(tfi.times[1]*(-100), tfi.times[-1] + tfi.times[1], tfi.times[1])
+
 	for condition in ['EDS_trig', 'IDS_trig', 'Stay_trig']:
-		cue_ave_TFR[sub][condition] =  tfi[condition][tfi[condition].metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.8, -0.3])  # not enough error trials to compare corr vs. error, so only pull #.apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
+		cue_ave_TFR[sub][condition] =  tfi[condition][tfi[condition].metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.1, 0])  # not enough error trials to compare corr vs. error, so only pull #.apply_baseline(mode='logratio',baseline=[-0.8, -0.3])
 		cue_ave_TFR[sub][condition].data = cue_ave_TFR[sub][condition].data*10 #convert to db
 
 # substract conditions within each subject
@@ -160,11 +167,11 @@ group_ave_cue_TFR_IDS = mne.grand_average(list(cue_ave_TFR_IDS.values()))
 group_ave_cue_TFR_Stay = mne.grand_average(list(cue_ave_TFR_Stay.values()))
 
 
-group_ave_cue_TFR_EDS.plot_topo(title='EDS', vmin=-1, vmax=1)
-group_ave_cue_TFR_IDS.plot_topo(title='IDS', vmin=-1, vmax=1)
-group_ave_cue_TFR_Stay.plot_topo(title='Stay', vmin=-1, vmax=1)
-#group_ave_cue_TFR_EDS_v_IDS.plot_topo()
-#group_ave_cue_TFR_IDS_v_Stay.plot_topo()
+group_ave_cue_TFR_EDS.plot_topo(title='EDS') #, vmin=-1, vmax=1)
+group_ave_cue_TFR_IDS.plot_topo(title='IDS')#, vmin=-1, vmax=1)
+group_ave_cue_TFR_Stay.plot_topo(title='Stay')#, vmin=-1, vmax=1)
+group_ave_cue_TFR_EDS_v_IDS.plot_topo()
+group_ave_cue_TFR_IDS_v_Stay.plot_topo()
 
 
 
