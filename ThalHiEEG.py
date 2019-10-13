@@ -103,21 +103,21 @@ n_cycles = 6 #freqs / 2.
 for sub in all_subs_cue.keys():
 	
 	#tfr on cue
-	tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_cue[sub].crop(tmin=0, tmax=1.5))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
-	# double mirror, then crop
-	tfi = tfi.crop(tmin = 0, tmax = all_subs_cue[sub].tmax)
-	save_object(tfi, OUT+sub+'_cueTFR')  
+	# tfi = tfr_morlet(mirror_evoke(mirror_evoke(mirror_evoke(all_subs_cue[sub].crop(tmin=0, tmax=1.5)))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+	# # double mirror, then crop
+	# tfi = tfi.crop(tmin = 0, tmax = all_subs_cue[sub].tmax)
+	# save_object(tfi, OUT+sub+'_cueTFR')  
 
 	#tfr on iti
-	tfi = tfr_morlet(mirror_iti(all_subs_ITI[sub]), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+	tfi = tfr_morlet(mirror_iti(mirror_iti(all_subs_ITI[sub])), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
 	# double mirror, then crop
 	tfi = tfi.crop(tmin = all_subs_ITI[sub].tmin, tmax = all_subs_ITI[sub].tmax)
 	save_object(tfi, OUT+sub+'_itiTFR')  
 
 
 	for condition in ['IDS', 'EDS', 'stay']:	
-		tfi = tfr_morlet(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition].crop(tmin=0, tmax=3))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
-		tfi = tfi.crop(tmin = 0, tmax = all_subs_probe[sub][condition].tmax)
+		tfi = tfr_morlet(mirror_evoke(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition].crop(tmin=-.7, tmax=3)))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=12)
+		tfi = tfi.crop(tmin = -.7, tmax = all_subs_probe[sub][condition].tmax)
 		save_object(tfi, OUT+sub+'_' + condition + '_probeTFR') 
 
 	# after saving to EpochTFR format, the triggers can be found in "trig_id", and can be selected by tfi['EDS_trig']
@@ -181,16 +181,58 @@ for sub in all_subs_cue.keys():
 
 
 ########################################################################
+### Load TFR without normalization for fooof
+########################################################################
+import fooof
+
+cue_ave_TFR = {}
+for sub in all_subs_cue.keys():
+	cue_ave_TFR[sub] = {}
+	try:
+		tfi = read_object(OUT+sub+'_cueTFR')  
+
+		for condition in ['EDS_trig', 'IDS_trig', 'Stay_trig']:
+			cue_ave_TFR[sub][condition] =  tfi[condition][tfi[condition].metadata['trial_Corr']==1].average()
+	except:
+		continue		
+
+
+# substract conditions within each subject
+cue_ave_TFR_EDS = {}
+cue_ave_TFR_IDS = {}
+cue_ave_TFR_Stay = {}
+
+for sub in cue_ave_TFR.keys():
+	cue_ave_TFR_EDS[sub] = cue_ave_TFR[sub]['EDS_trig']
+	cue_ave_TFR_IDS[sub] = cue_ave_TFR[sub]['IDS_trig']
+	cue_ave_TFR_Stay[sub] = cue_ave_TFR[sub]['Stay_trig']
+
+
+#grand average across subjects
+group_ave_cue_TFR_EDS = mne.grand_average(list(cue_ave_TFR_EDS.values()))
+group_ave_cue_TFR_IDS = mne.grand_average(list(cue_ave_TFR_IDS.values()))
+group_ave_cue_TFR_Stay = mne.grand_average(list(cue_ave_TFR_Stay.values()))
+
+# ave TFR spectrum 
+
+########################################################################
 ### Contrast power bewteen conditions for probe
 ########################################################################
 probe_ave_TFR = {}
-for sub in all_subs_cue.keys():
+for sub in list(all_subs_cue.keys()) :
 
 	probe_ave_TFR[sub] = {}
 	
+	# append ITI data as baseline in tfi object
+	btfi = read_object(OUT+sub+'_itiTFR')
+	btfi = np.mean(np.mean(btfi.data, axis=0), axis=2)
+	
 	for condition in ['IDS', 'EDS', 'stay']:
-		tfi = read_object(OUT+sub+'_' + condition + '_probeTFR') 
-		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.8, -0.6])
+		tfi = read_object(OUT+sub+'_' + condition + '_probeTFR')
+		bp = np.repeat(np.repeat(btfi[np.newaxis, :,:], tfi.data.shape[0], axis=0)[:,:,:,np.newaxis], 100, axis=3)
+		tfi.data = np.concatenate((bp, tfi.data), axis=3)
+		tfi.times = np.arange(tfi.times[0]-(100*(tfi.times[-1]-tfi.times[-2])), tfi.times[-1]+tfi.times[-1]-tfi.times[-2], tfi.times[-1]-tfi.times[-2])
+		probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.89, -0.7])
 		probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
 
 # substract conditions within each subject
@@ -211,15 +253,16 @@ group_ave_probe_TFR_EDS_v_IDS = mne.grand_average(list(probe_ave_TFR_EDS_v_IDS.v
 group_ave_probe_TFR_EDS = mne.grand_average(list(probe_ave_TFR_EDS.values()))
 group_ave_probe_TFR_IDS = mne.grand_average(list(probe_ave_TFR_IDS.values()))
 group_ave_probe_TFR_Stay = mne.grand_average(list(probe_ave_TFR_Stay.values()))
-group_ave_probe_TFR_EDS_v_IDS.plot_topo()
-#group_ave_probe_TFR_IDS_v_Stay.plot_topo()
-group_ave_probe_TFR_EDS.plot_topo(title='EDS', vmin=-3, vmax=3)
-group_ave_probe_TFR_IDS.plot_topo(title='IDS', vmin=-1, vmax=1)
-group_ave_probe_TFR_Stay.plot_topo(title='Stay', vmin=-1, vmax=1)
+group_ave_probe_TFR_EDS_v_IDS.plot_topo(vmin=-3, vmax=3, tmin=-0.67, tmax=1.5)
+group_ave_probe_TFR_EDS.plot_topo(vmin=-3, vmax=3, tmin=-0.67, tmax=1.5)
+group_ave_probe_TFR_IDS.plot_topo(vmin=-3, vmax=3, tmin=-0.67, tmax=1.5)
+group_ave_probe_TFR_Stay.plot_topo(vmin=-3, vmax=3, tmin=-0.67, tmax=1.5)
 
 
 
-
+##### Check indiv subject plot
+for sub in all_subs_probe.keys():
+	probe_ave_TFR[sub]['EDS'].plot_topo(title=sub, tmin=-0.67, tmax=1.5)
 
 
 ########################################################################
