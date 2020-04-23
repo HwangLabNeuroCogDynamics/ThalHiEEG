@@ -23,6 +23,22 @@ plt.ion() #turning interactive plotter off
 #print(matplotlib.is_interactive())
 #matplotlib.use('Agg')
 
+# where data are
+ROOT='/data/backed_up/shared/ThalHi_data/eeg_preproc/'
+print(os.listdir(ROOT))
+
+#where data should go
+OUT='/home/kahwang/bsh/ThalHi_data/TFR/'
+
+# Compiling epochs
+all_subs_cue = {}
+all_subs_probe = {}
+all_subs_ITI = {}
+#all_subs_resp={}
+
+included_subjects = ['128', '112', '108', '110', '120', '98', '86', '82', '115', '94', '76', '91', '80', '95', '121', '114', '125', '70',
+'107', '111', '88', '113', '131', '130', '135', '140', '167', '145', '146', '138', '147', '176', '122', '118', '103', '142']
+
 
 def save_object(obj, filename):
 	''' Simple function to write out objects into a pickle file
@@ -62,23 +78,6 @@ def mirror_iti(ep):
 	return e
 
 
-# where data are
-ROOT='/data/backed_up/shared/ThalHi_data/eeg_preproc/'
-print(os.listdir(ROOT))
-
-#where data should go
-OUT='/home/kahwang/bsh/ThalHi_data/TFR/'
-
-# Compiling epochs
-all_subs_cue = {}
-all_subs_probe = {}
-all_subs_ITI = {}
-#all_subs_resp={}
-
-included_subjects = ['128', '112', '108', '110', '120', '98', '86', '82', '115', '94', '76', '91', '80', '95', '121', '114', '125', '70',
-'107', '111', '88', '113', '131', '130', '135', '140', '167', '145', '146', '138', '147', '176', '122', '118', '103', '142']
-
-
 def load_epochs(included_subjects):
 
 	for sub in included_subjects:
@@ -110,7 +109,7 @@ def run_TFR():
 	#n_cycles = 6 #freqs / 2.
 
 	freqs = np.logspace(*np.log10([1, 40]), num=30)
-	n_cycles = freqs / 2.
+	n_cycles = 6#freqs / 2.
 
 	for sub in all_subs_cue.keys():
 		
@@ -219,6 +218,67 @@ def run_behav(all_subs_cue):
 # IDS .89 .08
 # Stay.93 .07
 
+
+	########################################################################
+	### Contrast power bewteen conditions for probe
+	########################################################################
+def run_baselinecorr(db_baseline):	
+	'''run and save baseline correction. Default to db'''
+
+	probe_ave_TFR = {}
+	db_baseline = True
+
+	for sub in included_subjects:
+
+		probe_ave_TFR[sub] = {}
+		
+		# append ITI data as baseline in tfi object
+		if db_baseline:
+			btfi = read_object(OUT+sub+'_itiTFR')
+			btfi = np.mean(np.mean(btfi.data, axis=0), axis=2)
+		
+		for condition in ['IDS', 'EDS', 'stay']:
+			tfi = read_object(OUT+sub+'_' + condition + '_probeTFR')
+			
+			if db_baseline:
+				bp = np.repeat(np.repeat(btfi[np.newaxis, :,:], tfi.data.shape[0], axis=0)[:,:,:,np.newaxis], 100, axis=3)
+				tfi.data = np.concatenate((bp, tfi.data), axis=3)
+				tfi.times = np.arange(tfi.times[0]-(100*(tfi.times[-1]-tfi.times[-2])), tfi.times[-1]+tfi.times[-1]-tfi.times[-2], tfi.times[-1]-tfi.times[-2])
+				probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.89, -0.7])
+				probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
+			else:
+				probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average()
+
+
+	# substract conditions within each subject
+	probe_ave_TFR_EDS = {}
+	probe_ave_TFR_IDS = {}
+	probe_ave_TFR_Stay = {}
+
+	for sub in included_subjects:
+		probe_ave_TFR_EDS[sub] = probe_ave_TFR[sub]['EDS'].copy()
+		probe_ave_TFR_IDS[sub] = probe_ave_TFR[sub]['IDS'].copy()
+		probe_ave_TFR_Stay[sub] = probe_ave_TFR[sub]['stay'].copy()
+
+	### Because baseline corr takes so long, save to HD.
+	if db_baseline:
+		for sub in included_subjects:
+			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRDBbc'
+			probe_ave_TFR_EDS[sub].save(fn)
+			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRDBbc'
+			probe_ave_TFR_IDS[sub].save(fn)
+			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRDBbc'
+			probe_ave_TFR_Stay[sub].save(fn)	
+	else:
+		for sub in included_subjects:
+			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRNobc'
+			probe_ave_TFR_EDS[sub].save(fn)
+			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRNobc'
+			probe_ave_TFR_IDS[sub].save(fn)
+			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRNobc'
+			probe_ave_TFR_Stay[sub].save(fn)	
+
+
 if __name__ == "__main__":
 
 
@@ -284,58 +344,98 @@ if __name__ == "__main__":
 	########################################################################
 	### Contrast power bewteen conditions for probe
 	########################################################################
-	probe_ave_TFR = {}
-	db_baseline = False
 
-	for sub in list(all_subs_cue.keys()) :
-
-		probe_ave_TFR[sub] = {}
-		
-		# append ITI data as baseline in tfi object
-		if db_baseline:
-			btfi = read_object(OUT+sub+'_itiTFR')
-			btfi = np.mean(np.mean(btfi.data, axis=0), axis=2)
-		
-		for condition in ['IDS', 'EDS', 'stay']:
-			tfi = read_object(OUT+sub+'_' + condition + '_probeTFR')
-			
-			if db_baseline:
-				bp = np.repeat(np.repeat(btfi[np.newaxis, :,:], tfi.data.shape[0], axis=0)[:,:,:,np.newaxis], 100, axis=3)
-				tfi.data = np.concatenate((bp, tfi.data), axis=3)
-				tfi.times = np.arange(tfi.times[0]-(100*(tfi.times[-1]-tfi.times[-2])), tfi.times[-1]+tfi.times[-1]-tfi.times[-2], tfi.times[-1]-tfi.times[-2])
-				probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average().apply_baseline(mode='logratio',baseline=[-0.89, -0.7])
-				probe_ave_TFR[sub][condition].data = probe_ave_TFR[sub][condition].data * 10 #convert to db
-			else:
-				probe_ave_TFR[sub][condition] = tfi[tfi.metadata['trial_Corr']==1].average()
-
-
-
-	# substract conditions within each subject
 	probe_ave_TFR_EDS = {}
 	probe_ave_TFR_IDS = {}
 	probe_ave_TFR_Stay = {}
 	probe_ave_TFR_EDS_v_IDS = {}
 	probe_ave_TFR_IDS_v_Stay = {}
 
-	for sub in all_subs_probe.keys():
-		probe_ave_TFR_EDS[sub] = probe_ave_TFR[sub]['EDS'].copy()
-		probe_ave_TFR_IDS[sub] = probe_ave_TFR[sub]['IDS'].copy()
-		probe_ave_TFR_Stay[sub] = probe_ave_TFR[sub]['stay'].copy()
+
+
+	for sub in included_subjects:
+		
+		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRDBbc'
+		probe_ave_TFR_EDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.75, tmax = 1.5)
+		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRDBbc'
+		probe_ave_TFR_IDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.75, tmax = 1.5)
+		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRDBbc'
+		probe_ave_TFR_Stay[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.75, tmax = 1.5)
 
 		probe_ave_TFR_EDS_v_IDS[sub] = probe_ave_TFR_EDS[sub] - probe_ave_TFR_IDS[sub] 
 		probe_ave_TFR_IDS_v_Stay[sub] = probe_ave_TFR_IDS[sub]  - probe_ave_TFR_Stay[sub]  
-
+	
 	group_ave_probe_TFR_IDS_v_Stay = mne.grand_average(list(probe_ave_TFR_IDS_v_Stay.values()))
 	group_ave_probe_TFR_EDS_v_IDS = mne.grand_average(list(probe_ave_TFR_EDS_v_IDS.values()))
 	group_ave_probe_TFR_EDS = mne.grand_average(list(probe_ave_TFR_EDS.values()))
 	group_ave_probe_TFR_IDS = mne.grand_average(list(probe_ave_TFR_IDS.values()))
 	group_ave_probe_TFR_Stay = mne.grand_average(list(probe_ave_TFR_Stay.values()))
-	group_ave_probe_TFR_EDS_v_IDS.plot_topo(vmin=-5e-11, vmax=5e-11, tmin=-0.65, tmax=1.5)
-	group_ave_probe_TFR_IDS_v_Stay.plot_topo(tmin=-0.65, tmax=1.5)
-	group_ave_probe_TFR_EDS.plot_topo(tmin=-0.65, tmax=1.5)
-	group_ave_probe_TFR_IDS.plot_topo(tmin=-0.65, tmax=1.5)
-	group_ave_probe_TFR_Stay.plot_topo(tmin=-0.65, tmax=1.5)
+
 				 
+
+	##### Code to try out spatiotemproal clustering 
+
+	
+	#con = mne.channels.find_ch_connectivity(group_ave_probe_TFR_EDS.info, "eeg")
+	# neighb file came from fieldtrip: https://github.com/fieldtrip/fieldtrip/blob/master/template/neighbours/biosemi64_neighb.mat
+	ch_con, ch_names = mne.channels.read_ch_connectivity('biosemi64_neighb.mat') 
+	
+	## attemp to create connectivity matrix that combines ch and freq, but FAILED!
+	#input into clustering needs to be in sub by time by freq-channel.
+	# original data shape for each subj is ch by freq by time
+	# need to reshape into subj by time by freq-ch
+
+	# ch_con = ch_con.toarray()
+	# n_frequencies = probe_ave_TFR_IDS['128'].data.shape[1]
+	# freq_con = np.eye(n_frequencies) + np.eye(n_frequencies, k=1) + np.eye(n_frequencies, k=-1)
+
+	# con = np.zeros((len(ch_con)+len(freq_con), (len(ch_con)+len(freq_con))))  #empty con matrix
+	# con[0:len(ch_con),0:len(ch_con)] = ch_con 
+	# con[len(ch_con):len(ch_con)+len(freq_con),len(ch_con):len(ch_con)+len(freq_con)] = freq_con 
+	# con[0:len(ch_con), len(ch_con):len(ch_con)+len(freq_con) ] =  np.ones((len(ch_con),len(freq_con) ))
+	# con[len(ch_con):len(ch_con)+len(freq_con) , 0:len(ch_con)  ] =  np.ones((len(freq_con), len(ch_con) )) #final freq-channel con matrix
+
+	# from scipy import sparse
+	# con = sparse.csr_matrix(con)
+
+	
+	# original data shape for each subj is ch by freq by time
+	D1 = np.zeros((len(probe_ave_TFR_IDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0])) 
+	D2 = np.zeros((len(probe_ave_TFR_EDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0]))
+
+	# need to be in subj by time by freq by ch
+	for i, sub in enumerate(probe_ave_TFR_EDS.keys()):
+		D1[i,:,:,:] = probe_ave_TFR_EDS[sub].data[:,:,:].transpose(2,1,0)
+		D2[i,:,:,:] = probe_ave_TFR_IDS[sub].data[:,:,:].transpose(2,1,0)   
+	D = D1 - D2 #EDS - IDS
+
+
+	#output should go back to original data dimension, which is chn by freq by time
+
+	ts = np.zeros((group_ave_probe_TFR_EDS.data.shape[0], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[2]))
+	mask = np.zeros((group_ave_probe_TFR_EDS.data.shape[0], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[2]))
+	
+	for n in np.arange(group_ave_probe_TFR_EDS.data.shape[1]):
+		t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_1samp_test(np.squeeze(D[:,:,n,:]), n_permutations=1024, step_down_p =.05, n_jobs = 24, out_type='mask', connectivity = ch_con, t_power = 1) 
+		cl = np.where(cluster_pv < .05)[0]
+
+		mask[:,n,:] = np.sum(np.array(clusters)[cl], axis=0).T
+		ts[:,n,:] = t_obs.T
+
+	
+	#significant_points = cluster_pv.reshape(t_obs.shape).T < .05
+	#print(str(significant_points.sum()) + " points selected by sig test ...")
+	pplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	pplot.data = ts *mask
+	pplot.plot_topo()
+	tplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	tplot.data = ts
+	tplot.plot_topo()
+	group_ave_probe_TFR_EDS_v_IDS.plot_topo(tmin=-0.65, tmax=1.5)
+	#group_ave_probe_TFR_IDS_v_Stay.plot_topo(tmin=-0.65, tmax=1.5)
+	#group_ave_probe_TFR_EDS.plot_topo(tmin=-0.65, tmax=1.5)
+	#group_ave_probe_TFR_IDS.plot_topo(tmin=-0.65, tmax=1.5)
+	#group_ave_probe_TFR_Stay.plot_topo(tmin=-0.65, tmax=1.5)
 
 	### get delta and theta
 
@@ -377,15 +477,7 @@ if __name__ == "__main__":
 		# Stay_theta[i] = np.mean(probe_ave_TFR_Stay[sub].data[chi, 5:10, 275:400])
 
 
-	### Because baseline corr takes so long, save to HD.
 
-	for sub in all_subs_probe.keys():
-		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRbc'
-		probe_ave_TFR_EDS[sub].save(fn)
-		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRbc'
-		probe_ave_TFR_IDS[sub].save(fn)
-		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRbc'
-		probe_ave_TFR_Stay[sub].save(fn)
 
 
 	##### Check indiv subject plot
@@ -393,24 +485,6 @@ if __name__ == "__main__":
 	# 	probe_ave_TFR[sub]['EDS'].plot_topo(title=sub, tmin=-0.67, tmax=1.5)
 
 
-	##### Code to try out spatiotemproal clustering 
-	con = mne.channels.find_ch_connectivity(group_ave_probe_TFR_EDS.info, "eeg")
-
-	#input into clustering needs to be in sub x time by channel.
-
-	D1 = np.zeros((len(probe_ave_TFR_IDS.keys()),probe_ave_TFR_IDS['128'].data.shape[2], probe_ave_TFR_IDS['128'].data.shape[0]))
-	D2 = np.zeros((len(probe_ave_TFR_EDS.keys()),probe_ave_TFR_EDS['128'].data.shape[2], probe_ave_TFR_EDS['128'].data.shape[0]))
-
-	for i, sub in enumerate(probe_ave_TFR_EDS.keys()):
-		D1[i,:,:] = np.mean(probe_ave_TFR_EDS[sub].data[:,1:8,:], axis=1).transpose(1,0)
-		D2[i,:,:] = np.mean(probe_ave_TFR_IDS[sub].data[:,1:8,:], axis=1).transpose(1,0)   
-
-	D1 = D1[:,150:1000,:]
-	D2 = D2[:,150:1000,:]
-	D = D2 - D1 #EDS - IDS
-	#tfce = dict(start=.2, step=.2) #don't know what this is
-	t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_1samp_test(D, n_permutations=1000, n_jobs = 16, t_power = 1) 
-	print(cluster_pv)
 
 
 
@@ -438,7 +512,7 @@ if __name__ == "__main__":
 	D2 = D2[:,125:1000,:]
 	D = D1-D2 # EDS - IDS
 	timevec = probe_ave_TFR_EDS['128'].times[125:1000]
-	t_obs, clusters, cluster_pv, h0 = mne.stats.permutation_cluster_1samp_test(D, n_permutations=1000, n_jobs = 16, t_power = 1) 
+	t_obs, clusters, cluster_pv, h0 = mne.stats.permutation_cluster_1samp_test(D, out_type = 'mask', n_permutations=1000, n_jobs = 16, t_power = 1) 
 	print(cluster_pv)
 
 
