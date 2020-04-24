@@ -3,6 +3,7 @@ from numpy import average, std
 import pickle
 from numpy.random import random, randint, normal, shuffle,uniform
 import scipy
+from scipy import sparse
 from scipy.stats import ttest_ind
 from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import dendrogram,linkage
@@ -351,16 +352,14 @@ if __name__ == "__main__":
 	probe_ave_TFR_EDS_v_IDS = {}
 	probe_ave_TFR_IDS_v_Stay = {}
 
-
-
 	for sub in included_subjects:
 		
 		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRDBbc'
-		probe_ave_TFR_EDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.75, tmax = 1.5)
+		probe_ave_TFR_EDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.65, tmax = 1.5)
 		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRDBbc'
-		probe_ave_TFR_IDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.75, tmax = 1.5)
+		probe_ave_TFR_IDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.65, tmax = 1.5)
 		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRDBbc'
-		probe_ave_TFR_Stay[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.75, tmax = 1.5)
+		probe_ave_TFR_Stay[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.65, tmax = 1.5)
 
 		probe_ave_TFR_EDS_v_IDS[sub] = probe_ave_TFR_EDS[sub] - probe_ave_TFR_IDS[sub] 
 		probe_ave_TFR_IDS_v_Stay[sub] = probe_ave_TFR_IDS[sub]  - probe_ave_TFR_Stay[sub]  
@@ -371,67 +370,100 @@ if __name__ == "__main__":
 	group_ave_probe_TFR_IDS = mne.grand_average(list(probe_ave_TFR_IDS.values()))
 	group_ave_probe_TFR_Stay = mne.grand_average(list(probe_ave_TFR_Stay.values()))
 
-				 
-
-	##### Code to try out spatiotemproal clustering 
-
-	
-	#con = mne.channels.find_ch_connectivity(group_ave_probe_TFR_EDS.info, "eeg")
+				
+	##### Code to try out spatiotemproal clustering 	
 	# neighb file came from fieldtrip: https://github.com/fieldtrip/fieldtrip/blob/master/template/neighbours/biosemi64_neighb.mat
 	ch_con, ch_names = mne.channels.read_ch_connectivity('biosemi64_neighb.mat') 
-	
-	## attemp to create connectivity matrix that combines ch and freq, but FAILED!
-	#input into clustering needs to be in sub by time by freq-channel.
+	ch_con = ch_con.toarray() #ch*ch connectivity matrix
+	n_ch = ch_con.shape[0]
+	n_freq = probe_ave_TFR_EDS[sub].data.shape[1]
+	freq_con = np.eye(n_freq) + np.eye(n_freq, k=1) + np.eye(n_freq, k=-1)  #freq*freq connectivity matrix
+
+	## attemp to create connectivity matrix that combines ch and freq
+	# input into clustering needs to be in sub by time by freq*channel
 	# original data shape for each subj is ch by freq by time
-	# need to reshape into subj by time by freq-ch
+	# need to reshape into subj by time by 'freq*ch
+	#now attempt to create the ((n_freq * n_ch) by (n_freq * n_ch)) con matrix
 
-	# ch_con = ch_con.toarray()
-	# n_frequencies = probe_ave_TFR_IDS['128'].data.shape[1]
-	# freq_con = np.eye(n_frequencies) + np.eye(n_frequencies, k=1) + np.eye(n_frequencies, k=-1)
+	con = np.zeros((n_freq * n_ch, n_freq * n_ch))
+	# now fill this matrix based on ch_con and freq_con. A ch*freq pair can only be connected if both ch*ch and freq*freq con matricex are connected 
+	for row in np.arange(con.shape[0]):  
+		for col in np.arange(con.shape[1]):  
+			freq_ri, ch_ri = divmod(row, n_ch) #row is freq, and col is ch accoridng to the reshape behavior
+			freq_ci, ch_ci = divmod(col, n_ch) #row is freq, and col is ch accoridng to the reshape behavior
 
-	# con = np.zeros((len(ch_con)+len(freq_con), (len(ch_con)+len(freq_con))))  #empty con matrix
-	# con[0:len(ch_con),0:len(ch_con)] = ch_con 
-	# con[len(ch_con):len(ch_con)+len(freq_con),len(ch_con):len(ch_con)+len(freq_con)] = freq_con 
-	# con[0:len(ch_con), len(ch_con):len(ch_con)+len(freq_con) ] =  np.ones((len(ch_con),len(freq_con) ))
-	# con[len(ch_con):len(ch_con)+len(freq_con) , 0:len(ch_con)  ] =  np.ones((len(freq_con), len(ch_con) )) #final freq-channel con matrix
-
-	# from scipy import sparse
-	# con = sparse.csr_matrix(con)
-
+			if freq_con[freq_ri, freq_ci] == 1 and ch_con[ch_ri, ch_ci]:
+				con[row, col] = 1
+	#sns.heatmap(con)  			
+	con = sparse.csr_matrix(con)
 	
 	# original data shape for each subj is ch by freq by time
-	D1 = np.zeros((len(probe_ave_TFR_IDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0])) 
-	D2 = np.zeros((len(probe_ave_TFR_EDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0]))
-
+	DEDS = np.zeros((len(probe_ave_TFR_IDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0])) 
+	DIDS = np.zeros((len(probe_ave_TFR_EDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0]))
+	DStay = np.zeros((len(probe_ave_TFR_EDS.keys()),group_ave_probe_TFR_EDS.data.shape[2], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[0]))
+	
 	# need to be in subj by time by freq by ch
 	for i, sub in enumerate(probe_ave_TFR_EDS.keys()):
-		D1[i,:,:,:] = probe_ave_TFR_EDS[sub].data[:,:,:].transpose(2,1,0)
-		D2[i,:,:,:] = probe_ave_TFR_IDS[sub].data[:,:,:].transpose(2,1,0)   
-	D = D1 - D2 #EDS - IDS
-
+		DEDS[i,:,:,:] = probe_ave_TFR_EDS[sub].data[:,:,:].transpose(2,1,0)
+		DIDS[i,:,:,:] = probe_ave_TFR_IDS[sub].data[:,:,:].transpose(2,1,0)   
+		DStay[i,:,:,:] = probe_ave_TFR_Stay[sub].data[:,:,:].transpose(2,1,0)
+	# now reshape into subj by time by freq*ch
+	DEDS = DEDS.reshape((DEDS.shape[0],DEDS.shape[1], DEDS.shape[2]*DEDS.shape[3]))
+	DIDS = DIDS.reshape((DIDS.shape[0],DIDS.shape[1], DIDS.shape[2]*DIDS.shape[3]))
+	DStay = DStay.reshape((DStay.shape[0],DStay.shape[1], DStay.shape[2]*DStay.shape[3]))
+	
+	# contrast
+	DEDSvIDS = DEDS - DIDS #EDS - IDS
+	DIDSvStay = DIDS - DStay
+	DEDSvStay = DEDS - DStay
 
 	#output should go back to original data dimension, which is chn by freq by time
-
-	ts = np.zeros((group_ave_probe_TFR_EDS.data.shape[0], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[2]))
-	mask = np.zeros((group_ave_probe_TFR_EDS.data.shape[0], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[2]))
+	#ts = np.zeros((group_ave_probe_TFR_EDS.data.shape[0], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[2]))
+	#mask = np.zeros((group_ave_probe_TFR_EDS.data.shape[0], group_ave_probe_TFR_EDS.data.shape[1], group_ave_probe_TFR_EDS.data.shape[2]))
 	
-	for n in np.arange(group_ave_probe_TFR_EDS.data.shape[1]):
-		t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_1samp_test(np.squeeze(D[:,:,n,:]), n_permutations=1024, step_down_p =.05, n_jobs = 24, out_type='mask', connectivity = ch_con, t_power = 1) 
-		cl = np.where(cluster_pv < .05)[0]
-
-		mask[:,n,:] = np.sum(np.array(clusters)[cl], axis=0).T
-		ts[:,n,:] = t_obs.T
-
+	#for n in np.arange(group_ave_probe_TFR_EDS.data.shape[1]):
+	t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_1samp_test(DEDSvIDS, threshold = 1.69, step_down_p =.05, n_permutations=1024, n_jobs = 24, out_type='mask', connectivity = con, t_power = 1) 
+	t_obs = t_obs.reshape((t_obs.shape[0], n_freq, n_ch)).T
+	cl = np.where(cluster_pv < .05)[0]
+	mask = np.sum(np.array(clusters)[cl], axis=0)
+	mask = mask.reshape((mask.shape[0],n_freq, n_ch)).T
 	
 	#significant_points = cluster_pv.reshape(t_obs.shape).T < .05
 	#print(str(significant_points.sum()) + " points selected by sig test ...")
-	pplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	pplot.data = ts *mask
-	pplot.plot_topo()
-	tplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	tplot.data = ts
-	tplot.plot_topo()
-	group_ave_probe_TFR_EDS_v_IDS.plot_topo(tmin=-0.65, tmax=1.5)
+	EDSvIDSplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	EDSvIDSplot.data = t_obs *mask	
+	EDSvIDStplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	EDSvIDStplot.data = t_obs
+	EDSvIDSplot.plot_topo()
+	EDSvIDStplot.plot_topo()
+
+	t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_1samp_test(DIDSvStay, threshold = 1.69, step_down_p = .05, n_permutations=1024, n_jobs = 24, out_type='mask', connectivity = ch_con, t_power = 1) 
+	t_obs = t_obs.reshape((t_obs.shape[0], n_freq, n_ch)).T
+	cl = np.where(cluster_pv < .05)[0]
+	mask = np.sum(np.array(clusters)[cl], axis=0)
+	mask = mask.reshape((mask.shape[0],n_freq, n_ch)).T
+
+	IDSvStayplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	IDSvStayplot.data = t_obs *mask	
+	IDSvStaytplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	IDSvStaytplot.data = t_obs
+	IDSvStayplot.plot_topo()
+	IDSvStaytplot.plot_topo()
+
+	t_obs, clusters, cluster_pv, h0 = mne.stats.spatio_temporal_cluster_1samp_test(DEDSvStay, threshold = 1.69, step_down_p = .05, n_permutations=1024, n_jobs = 24, out_type='mask', connectivity = ch_con, t_power = 1) 
+	t_obs = t_obs.reshape((t_obs.shape[0], n_freq, n_ch)).T
+	cl = np.where(cluster_pv < .05)[0]
+	mask = np.sum(np.array(clusters)[cl], axis=0)
+	mask = mask.reshape((mask.shape[0],n_freq, n_ch)).T
+
+	EDSvStayplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	EDSvStayplot.data = t_obs *mask	
+	EDSvStaytplot = group_ave_probe_TFR_EDS_v_IDS.copy()
+	EDSvStaytplot.data = t_obs
+	EDSvStayplot.plot_topo()
+	EDSvStaytplot.plot_topo()
+
+	#group_ave_probe_TFR_EDS_v_IDS.plot_topo(tmin=-0.65, tmax=1.5)
 	#group_ave_probe_TFR_IDS_v_Stay.plot_topo(tmin=-0.65, tmax=1.5)
 	#group_ave_probe_TFR_EDS.plot_topo(tmin=-0.65, tmax=1.5)
 	#group_ave_probe_TFR_IDS.plot_topo(tmin=-0.65, tmax=1.5)
