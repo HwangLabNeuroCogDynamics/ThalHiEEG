@@ -105,20 +105,24 @@ def load_epochs(included_subjects):
 ### run trial by trial TFR, without any baseline, then save.
 ########################################################################
 
-def run_TFR():
+def run_TFR(all_subs_ITI, all_subs_probe):
+	
 	#freqs=np.arange(1,40.,1.)
 	#n_cycles = 6 #freqs / 2.
 
-	freqs = np.logspace(*np.log10([1, 40]), num=30)
-	n_cycles = 6#freqs / 2.
+	freqs = np.logspace(*np.log10([1, 40]), num=20)
+	n_cycles = 6
 
 	for sub in all_subs_cue.keys():
 		
-		#tfr on cue
-		tfi = tfr_morlet(mirror_evoke(mirror_evoke(mirror_evoke(all_subs_cue[sub].crop(tmin=0, tmax=1.5)))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=24)
-		# double mirror, then crop
-		tfi = tfi.crop(tmin = 0, tmax = all_subs_cue[sub].tmax)
-		save_object(tfi, OUT+sub+'_cueTFR')  
+		#tfr on cue ### Don't need this anymore now that we use both probe triggers to include both probe and cue periods
+		# tfi = tfr_morlet(mirror_evoke(mirror_evoke(mirror_evoke(all_subs_cue[sub].crop(tmin=0, tmax=1.5)))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=24)
+		# # double mirror, then crop
+		# tfi = tfi.crop(tmin = 0, tmax = all_subs_cue[sub].tmax)
+		# save_object(tfi, OUT+sub+'_cueTFR')  
+
+		# resample data
+		all_subs_ITI[sub] = all_subs_ITI[sub].resample(128,'auto') 
 
 		#tfr on iti
 		tfi = tfr_morlet(mirror_iti(mirror_iti(all_subs_ITI[sub])), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=24)
@@ -127,9 +131,13 @@ def run_TFR():
 		save_object(tfi, OUT+sub+'_itiTFR')  
 
 		#tfr on probe
-		for condition in ['IDS', 'EDS', 'stay']:	
-			tfi = tfr_morlet(mirror_evoke(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition].crop(tmin=-.7, tmax=3)))), freqs=freqs, average=False,n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=24)
-			tfi = tfi.crop(tmin = -.7, tmax = all_subs_probe[sub][condition].tmax)
+		for condition in ['IDS', 'EDS', 'stay']:
+
+			#resample data
+			all_subs_probe[sub][condition] = all_subs_probe[sub][condition].resample(128,'auto')
+
+			tfi = tfr_morlet(mirror_evoke(mirror_evoke(mirror_evoke(all_subs_probe[sub][condition].crop(tmin=-.65, tmax=all_subs_probe[sub][condition].tmax)))), freqs=freqs, average=False, n_cycles=n_cycles, use_fft=True, return_itc=False, decim=1, n_jobs=24)
+			tfi = tfi.crop(tmin = -.65, tmax = all_subs_probe[sub][condition].tmax)
 			save_object(tfi, OUT+sub+'_' + condition + '_probeTFR') 
 
 	#after saving to EpochTFR format, the triggers can be found in "trig_id", and can be selected by tfi['EDS_trig']
@@ -227,7 +235,7 @@ def run_baselinecorr(db_baseline):
 	'''run and save baseline correction. Default to db'''
 
 	probe_ave_TFR = {}
-	db_baseline = True
+	#db_baseline = True
 
 	for sub in included_subjects:
 
@@ -265,28 +273,40 @@ def run_baselinecorr(db_baseline):
 	if db_baseline:
 		for sub in included_subjects:
 			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRDBbc'
-			probe_ave_TFR_EDS[sub].save(fn)
+			probe_ave_TFR_EDS[sub].save(fn, overwrite=True)
 			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRDBbc'
-			probe_ave_TFR_IDS[sub].save(fn)
+			probe_ave_TFR_IDS[sub].save(fn, overwrite=True)
 			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRDBbc'
-			probe_ave_TFR_Stay[sub].save(fn)	
+			probe_ave_TFR_Stay[sub].save(fn, overwrite=True)	
 	else:
 		for sub in included_subjects:
 			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRNobc'
-			probe_ave_TFR_EDS[sub].save(fn)
+			probe_ave_TFR_EDS[sub].save(fn, overwrite=True)
 			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRNobc'
-			probe_ave_TFR_IDS[sub].save(fn)
+			probe_ave_TFR_IDS[sub].save(fn, overwrite=True)
 			fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRNobc'
-			probe_ave_TFR_Stay[sub].save(fn)	
+			probe_ave_TFR_Stay[sub].save(fn, overwrite=True)	
 
 
 if __name__ == "__main__":
 
+	########################################################################
+	### Load epoch, run TFR. Save to disk, then do baseline
+	########################################################################
+	#all_subs_cue, all_subs_ITI, _ = load_epochs(included_subjects)
+	#run_TFR(all_subs_ITI, all_subs_probe)
+
+	# db_baseline = True
+	# run_baselinecorr(db_baseline)
+
+	# db_baseline = False
+	# run_baselinecorr(db_baseline)
+
+	
 
 	########################################################################
 	### Contrast power bewteen conditions for probe
 	########################################################################
-
 	probe_ave_TFR_EDS = {}
 	probe_ave_TFR_IDS = {}
 	probe_ave_TFR_Stay = {}
@@ -361,14 +381,18 @@ if __name__ == "__main__":
 
 	#output should go back to original data dimension, which is chn by freq by time
 	#This is to try the tfce
-	threshold_tfce = dict(start=0, step=0.2)
-	
+	threshold_tfce = dict(start=1, step=0.33)
+	mne.set_memmap_min_size('100K') #memory stuff.
+	mne.set_cache_dir('/home/kahwang/tmp/')
+	pthresh = 1.69
+
 	def do_permutation(input, pthreshold, conmat, n_freq, n_ch):
 		t_obs, clusters, cluster_pv, _ = mne.stats.spatio_temporal_cluster_1samp_test(input, threshold = pthreshold, step_down_p =.05, n_permutations=1024, n_jobs = 24, out_type='mask', connectivity = conmat, t_power = 1) 
 		t_obs = t_obs.reshape((t_obs.shape[0], n_freq, n_ch)).T
 		cl = np.where(cluster_pv < .05)[0]
 		mask = np.sum(np.array(clusters)[cl], axis=0)
 		mask = mask.reshape((mask.shape[0],n_freq, n_ch)).T
+
 
 		return t_obs, mask	
 	
@@ -393,7 +417,9 @@ if __name__ == "__main__":
 	EDSvStayplot.data = t_obs *mask	
 	EDSvStaytplot = group_ave_probe_TFR_EDS_v_IDS.copy()
 	EDSvStaytplot.data = t_obs
-	
+
+
+
 
 	#plotting
 	# EDSvIDSplot.plot_topo()
