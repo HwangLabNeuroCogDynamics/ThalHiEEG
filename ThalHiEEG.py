@@ -315,11 +315,11 @@ if __name__ == "__main__":
 
 	for sub in included_subjects:
 		
-		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRNobc'
+		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_EDS_probeTFRDBbc'
 		probe_ave_TFR_EDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.65, tmax = 1.5)
-		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRNobc'
+		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_IDS_probeTFRDBbc'
 		probe_ave_TFR_IDS[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.65, tmax = 1.5)
-		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRNobc'
+		fn = '/home/kahwang/bsh/ThalHi_data/TFR/' + sub + '_Stay_probeTFRDBbc'
 		probe_ave_TFR_Stay[sub] = mne.time_frequency.read_tfrs(fn)[0].crop(tmin = -0.65, tmax = 1.5)
 
 		probe_ave_TFR_EDS_v_IDS[sub] = probe_ave_TFR_EDS[sub] - probe_ave_TFR_IDS[sub] 
@@ -331,6 +331,14 @@ if __name__ == "__main__":
 	group_ave_probe_TFR_IDS = mne.grand_average(list(probe_ave_TFR_IDS.values()))
 	group_ave_probe_TFR_Stay = mne.grand_average(list(probe_ave_TFR_Stay.values()))
 
+
+
+	# # look through indiv plots
+	# plt.ioff()
+	# for sub in included_subjects:
+	# 	probe_ave_TFR_EDS_v_IDS[sub].plot_topo(vmin=-2, vmax=2)
+
+
 				
 	##### Code to try out spatiotemproal clustering 	
 	# neighb file came from fieldtrip: https://github.com/fieldtrip/fieldtrip/blob/master/template/neighbours/biosemi64_neighb.mat
@@ -340,11 +348,11 @@ if __name__ == "__main__":
 	n_freq = probe_ave_TFR_EDS[sub].data.shape[1]
 	freq_con = np.eye(n_freq) + np.eye(n_freq, k=1) + np.eye(n_freq, k=-1)  #freq*freq connectivity matrix
 
-	## attemp to create connectivity matrix that combines ch and freq
-	# input into clustering needs to be in sub by time by freq*channel
+	## attemp to create neighboring connectivity matrix that combines ch and freq
+	# Input into clustering needs to be in sub by time by freq*channel
 	# original data shape for each subj is ch by freq by time
-	# need to reshape into subj by time by 'freq*ch
-	#now attempt to create the ((n_freq * n_ch) by (n_freq * n_ch)) con matrix
+	# need to reshape into subj by time by 'freq*ch'. The last dimesnion is collapsed.
+	# now attempt to create the ((n_freq * n_ch) by (n_freq * n_ch)) neighboring connectivity matrix
 
 	con = np.zeros((n_freq * n_ch, n_freq * n_ch))
 	# now fill this matrix based on ch_con and freq_con. 
@@ -369,6 +377,7 @@ if __name__ == "__main__":
 		DEDS[i,:,:,:] = probe_ave_TFR_EDS[sub].data[:,:,:].transpose(2,1,0)
 		DIDS[i,:,:,:] = probe_ave_TFR_IDS[sub].data[:,:,:].transpose(2,1,0)   
 		DStay[i,:,:,:] = probe_ave_TFR_Stay[sub].data[:,:,:].transpose(2,1,0)
+	
 	# now then reshape into subj by time by freq*ch for the permutation
 	DEDS = DEDS.reshape((DEDS.shape[0],DEDS.shape[1], DEDS.shape[2]*DEDS.shape[3]))
 	DIDS = DIDS.reshape((DIDS.shape[0],DIDS.shape[1], DIDS.shape[2]*DIDS.shape[3]))
@@ -381,42 +390,50 @@ if __name__ == "__main__":
 
 	#output should go back to original data dimension, which is chn by freq by time
 	#This is to try the tfce
-	threshold_tfce = dict(start=1, step=0.33)
+	threshold_tfce = dict(start=0, step=0.33)
 	mne.set_memmap_min_size('100K') #memory stuff.
 	mne.set_cache_dir('/home/kahwang/tmp/')
 	pthresh = 1.69
 
+
 	def do_permutation(input, pthreshold, conmat, n_freq, n_ch):
-		t_obs, clusters, cluster_pv, _ = mne.stats.spatio_temporal_cluster_1samp_test(input, threshold = pthreshold, step_down_p =.05, n_permutations=1024, n_jobs = 24, out_type='mask', connectivity = conmat, t_power = 1) 
+		t_obs, clusters, cluster_pv, _ = mne.stats.spatio_temporal_cluster_1samp_test(input, threshold = pthreshold, step_down_p =.05, n_permutations=1024, n_jobs = 24, out_type='mask', connectivity = conmat, t_power = 0) 
 		t_obs = t_obs.reshape((t_obs.shape[0], n_freq, n_ch)).T
 		cl = np.where(cluster_pv < .05)[0]
 		mask = np.sum(np.array(clusters)[cl], axis=0)
 		mask = mask.reshape((mask.shape[0],n_freq, n_ch)).T
 
-
 		return t_obs, mask	
 	
+
 	# permute EDS v IDS
 	t_obs, mask = do_permutation(DEDSvIDS, threshold_tfce, con, n_freq, n_ch)	
 	EDSvIDSplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	EDSvIDSplot.data = t_obs *mask	
+	EDSvIDSplot.data = EDSvIDSplot.data * mask	
 	EDSvIDStplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	EDSvIDStplot.data = t_obs
-	
+	EDSvIDStplot.data = mask
+	save_object(EDSvIDSplot, 'EDSvIDSplot')
+	save_object(EDSvIDStplot, 'EDSvIDStplot')
+
+
 	#permute IDS v stay
 	t_obs, mask = do_permutation(DIDSvStay, threshold_tfce, con, n_freq, n_ch)	
 	IDSvStayplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	IDSvStayplot.data = t_obs *mask	
+	IDSvStayplot.data = IDSvStayplot.data *mask	
 	IDSvStaytplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	IDSvStaytplot.data = t_obs
-
+	IDSvStaytplot.data = mask
+	save_object(IDSvStayplot, 'IDSvStayplot')
+	save_object(IDSvStaytplot, 'IDSvStaytplot')
 
 	#permute EDS v stay
 	t_obs, mask = do_permutation(DEDSvStay, threshold_tfce, con, n_freq, n_ch)
 	EDSvStayplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	EDSvStayplot.data = t_obs *mask	
+	EDSvStayplot.data = EDSvStayplot.data *mask	
 	EDSvStaytplot = group_ave_probe_TFR_EDS_v_IDS.copy()
-	EDSvStaytplot.data = t_obs
+	EDSvStaytplot.data = mask
+	save_object(EDSvStayplot, 'EDSvStaytplot')
+	save_object(EDSvStaytplot, 'EDSvStaytplot')
+
 
 
 
@@ -437,15 +454,10 @@ if __name__ == "__main__":
 	
 
 
-
-
-
-
-
 	################################################################################
 	################################################################################
 	################################################################################
-	#################### LEFT OVER
+	#################### LEFT OVER STUFF
 	################################################################################
 	################################################################################
 	################################################################################
